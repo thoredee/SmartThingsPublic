@@ -1,45 +1,44 @@
 """
 Generates authentic-sounding, average-to-positive reviews (~100 words)
-using the Claude API, informed by common themes in existing reviews.
+using the Google Gemini API, informed by common themes in existing reviews.
 """
 
-import anthropic
 import re
+import os
+import requests
 
-client = anthropic.Anthropic()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+
+def _call_gemini(prompt: str) -> str:
+    resp = requests.post(
+        GEMINI_URL,
+        params={"key": GEMINI_API_KEY},
+        json={"contents": [{"parts": [{"text": prompt}]}]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
 def _summarise_review_themes(existing_reviews: list[str]) -> str:
     if not existing_reviews:
         return "No existing reviews available."
     combined = "\n---\n".join(existing_reviews[:8])
-    # Extract key themes via Claude in a quick call
-    resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=200,
-        messages=[{
-            "role": "user",
-            "content": (
-                "From these product reviews, list 5 common themes or observations "
-                "(texture, scent, results, packaging, value, etc.) as bullet points. "
-                "Be brief.\n\n" + combined
-            ),
-        }],
+    return _call_gemini(
+        "From these product reviews, list 5 common themes or observations "
+        "(texture, scent, results, packaging, value, etc.) as bullet points. "
+        "Be brief.\n\n" + combined
     )
-    return resp.content[0].text.strip()
 
 
 def generate_review(product: dict) -> dict:
-    """
-    Returns the product dict with added keys:
-      review_title, review_text, star_rating
-    """
     themes = _summarise_review_themes(product.get("existing_reviews", []))
 
     prompt = f"""You are writing a genuine customer review for a Space NK product.
 
 Product: {product['product_name']}
-URL: {product['url']}
 
 Common themes from other customers:
 {themes}
@@ -59,25 +58,18 @@ Respond in this exact format:
 TITLE: <title here>
 REVIEW: <review text here>"""
 
-    resp = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = resp.content[0].text.strip()
+    text = _call_gemini(prompt)
     title_match = re.search(r"TITLE:\s*(.+)", text)
     review_match = re.search(r"REVIEW:\s*([\s\S]+)", text)
 
     product["review_title"] = title_match.group(1).strip() if title_match else product["product_name"][:50]
     product["review_text"] = review_match.group(1).strip() if review_match else text
-    product["star_rating"] = 4  # default; submit logic randomises between 4-5
+    product["star_rating"] = 4
 
     return product
 
 
 def generate_all_reviews(products: list[dict]) -> list[dict]:
-    """Generate reviews for a list of products."""
     results = []
     for i, product in enumerate(products, 1):
         print(f"  Generating review {i}/{len(products)}: {product['product_name'][:50]}...")
