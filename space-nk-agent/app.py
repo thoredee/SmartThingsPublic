@@ -91,9 +91,9 @@ HTML = """
   <div class="card" id="creds-card">
     <h2>Space NK Account</h2>
     <label>Email address</label>
-    <input type="email" id="email" placeholder="immy@example.com">
+    <input type="email" id="email" value="immydonner@gmail.com">
     <label>Password</label>
-    <input type="password" id="password" placeholder="••••••••">
+    <input type="password" id="password" value="Kelmarsh11">
     <button class="btn btn-primary" id="generate-btn" onclick="startGenerate()">
       Find &amp; Generate This Month's Reviews
     </button>
@@ -183,6 +183,12 @@ async function startGenerate() {
 
   if (!d.ok) {
     setStatus('Error: ' + d.error, false);
+    if (d.log && d.log.length) {
+      const logDiv = document.createElement('pre');
+      logDiv.style = 'background:#f5f5f5;border:1px solid #ddd;padding:12px;font-size:.75rem;margin-top:12px;overflow-x:auto;white-space:pre-wrap;';
+      logDiv.textContent = d.log.join('\n');
+      document.getElementById('status-bar').appendChild(logDiv);
+    }
     document.getElementById('generate-btn').disabled = false;
     return;
   }
@@ -257,16 +263,23 @@ def api_generate():
 
     try:
         excluded = history.get_reviewed_product_ids()
-        print(f"[agent] Fetching {needed} candidate products (excluding {len(excluded)} already reviewed)…")
-        products = scraper.fetch_candidate_products(excluded, needed)
+        print(f"[agent] Fetching {needed} candidate products…")
+        products, log = scraper.fetch_candidate_products(excluded, needed)
+        for line in log:
+            print(f"  {line}")
         if not products:
-            return jsonify({"ok": False, "error": "Could not find any new products to review on Space NK."})
+            return jsonify({
+                "ok": False,
+                "error": "Could not find any products on Space NK. See details below.",
+                "log": log,
+            })
 
         print(f"[agent] Generating reviews for {len(products)} products…")
         reviewed = generator.generate_all_reviews(products)
-        return jsonify({"ok": True, "reviews": reviewed})
+        return jsonify({"ok": True, "reviews": reviewed, "log": log})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+        import traceback
+        return jsonify({"ok": False, "error": str(e), "log": [traceback.format_exc()]})
 
 
 @app.route("/api/submit", methods=["POST"])
