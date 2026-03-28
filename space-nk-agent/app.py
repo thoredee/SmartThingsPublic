@@ -174,12 +174,19 @@ async function startGenerate() {
   document.getElementById('results-section').style.display = 'none';
   setStatus('Scanning Space NK for products (this can take a minute)…');
 
-  const r = await fetch('/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  const d = await r.json();
+  let d;
+  try {
+    const r = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    d = await r.json();
+  } catch (err) {
+    setStatus('Network error — is the app still running? (' + err.message + ')', false);
+    document.getElementById('generate-btn').disabled = false;
+    return;
+  }
 
   if (!d.ok) {
     setStatus('Error: ' + d.error, false);
