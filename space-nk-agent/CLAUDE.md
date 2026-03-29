@@ -54,6 +54,9 @@ Then open http://localhost:5000. Or just double-click `START REVIEWS.bat` (edit 
 - **Review submission selectors:** `submit_review()` in `scraper.py` uses multiple fallback selectors for the star rating, title field, body field, and submit button. If submission fails silently, Space NK may have updated their review widget (likely Bazaarvoice).
 - **History file:** `review_history.json` must be preserved across sessions — it's what prevents repeat reviews. It's local to the project folder.
 - **No database** — all state is in `review_history.json`. If moving to another machine, copy this file.
+- **Browser timing:** `START REVIEWS.bat` uses `timeout /t 4` to wait 4 seconds before opening the browser, giving Flask time to start. If the red error banner appears on load, Flask didn't start in time — close and re-run the bat.
+- **GEMINI_API_KEY in bat file:** The key is hardcoded in `START REVIEWS.bat` as `set GEMINI_API_KEY=AIza...`. The `set` syntax **must** include the variable name and `=` sign — a bare `set VALUE` silently does nothing on Windows.
+- **Exposed API key:** The Gemini API key was accidentally shared in chat during setup. If reviews start failing with auth errors, regenerate the key at aistudio.google.com and update `START REVIEWS.bat`.
 
 ## Monthly workflow (what Immy/Thore does)
 

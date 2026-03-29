@@ -165,6 +165,7 @@ function renderReviews(reviews) {
 }
 
 async function startGenerate() {
+  try {
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
   if (!email || !password) { alert('Please enter your Space NK email and password.'); return; }
@@ -204,6 +205,10 @@ async function startGenerate() {
   setStatus(`Generated ${d.reviews.length} reviews. Review and submit below.`, false);
   renderReviews(d.reviews);
   loadSummary();
+  } catch (fatalErr) {
+    setStatus('Unexpected error: ' + fatalErr.message, false);
+    document.getElementById('generate-btn').disabled = false;
+  }
 }
 
 async function submitAll() {
@@ -237,6 +242,17 @@ async function submitAll() {
 }
 
 loadSummary();
+
+// Startup check — confirms JS and server are both working
+window.addEventListener('load', () => {
+  fetch('/api/summary')
+    .then(r => r.ok ? null : Promise.reject('Server returned ' + r.status))
+    .catch(e => {
+      document.body.insertAdjacentHTML('afterbegin',
+        '<div style="background:#c0392b;color:#fff;padding:14px 20px;font-family:sans-serif;font-size:.9rem">' +
+        '⚠️ Cannot reach the app server. Please close this tab, wait 5 seconds, then open http://localhost:5000 again.</div>');
+    });
+});
 </script>
 </body>
 </html>
