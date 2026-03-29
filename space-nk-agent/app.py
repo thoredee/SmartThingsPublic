@@ -8,7 +8,7 @@ Then open http://localhost:5000 in your browser.
 import json
 import os
 import threading
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, make_response, request
 from playwright.sync_api import sync_playwright
 
 import history
@@ -74,6 +74,7 @@ HTML = """
 <header>
   <h1>Space NK Review Agent</h1>
   <span class="badge">Immy's Monthly Reviews</span>
+  <span style="margin-left:auto;font-size:.7rem;opacity:.5;">v4</span>
 </header>
 <main>
 
@@ -173,7 +174,7 @@ async function startGenerate() {
   document.getElementById('generate-btn').disabled = true;
   document.getElementById('reviews-section').style.display = 'none';
   document.getElementById('results-section').style.display = 'none';
-  setStatus('Scanning Space NK for products (this can take a minute)…');
+  setStatus('Scanning Space NK for products (this can take a minute)...');
 
   let d;
   try {
@@ -184,7 +185,7 @@ async function startGenerate() {
     });
     d = await r.json();
   } catch (err) {
-    setStatus('Network error — is the app still running? (' + err.message + ')', false);
+    setStatus('Network error - is the app still running? (' + err.message + ')', false);
     document.getElementById('generate-btn').disabled = false;
     return;
   }
@@ -250,7 +251,7 @@ window.addEventListener('load', () => {
     .catch(e => {
       document.body.insertAdjacentHTML('afterbegin',
         '<div style="background:#c0392b;color:#fff;padding:14px 20px;font-family:sans-serif;font-size:.9rem">' +
-        '⚠️ Cannot reach the app server. Please close this tab, wait 5 seconds, then open http://localhost:5000 again.</div>');
+        'Cannot reach the app server. Please close this tab, wait 5 seconds, then open http://localhost:5000 again.</div>');
     });
 });
 </script>
@@ -261,7 +262,10 @@ window.addEventListener('load', () => {
 
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    resp = make_response(HTML)
+    resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @app.route("/api/summary")
