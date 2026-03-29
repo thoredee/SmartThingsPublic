@@ -19,11 +19,17 @@ app = Flask(__name__)
 
 # In-memory state for the current session
 _state = {
-    "status": "idle",           # idle | scraping | generating | ready | submitting | done
+    "status": "idle",
     "message": "",
-    "reviews": [],              # list of generated review dicts
+    "reviews": [],
     "submit_results": [],
+    "progress": [],             # live progress messages shown in the UI
 }
+
+def _add_progress(msg: str):
+    _state["progress"].append(msg)
+
+generator.set_progress_callback(_add_progress)
 
 HTML = """
 <!DOCTYPE html>
@@ -101,7 +107,12 @@ HTML = """
   </div>
 
   <!-- Status bar -->
-  <div id="status-bar"><span class="spinner" id="spinner"></span><span id="status-msg">Loading…</span></div>
+  <div id="status-bar"><span class="spinner" id="spinner"></span><span id="status-msg">Loading...</span></div>
+
+  <!-- Live progress log -->
+  <div id="progress-box" style="display:none;background:#1a1a1a;color:#e0e0e0;border-radius:6px;padding:16px;margin-bottom:20px;font-family:monospace;font-size:.8rem;line-height:1.7;max-height:260px;overflow-y:auto;">
+    <div id="progress-log"></div>
+  </div>
 
   <!-- Reviews list -->
   <div id="reviews-section" style="display:none">
@@ -174,7 +185,29 @@ async function startGenerate() {
   document.getElementById('generate-btn').disabled = true;
   document.getElementById('reviews-section').style.display = 'none';
   document.getElementById('results-section').style.display = 'none';
-  setStatus('Scanning Space NK for products (this can take a minute)...');
+  document.getElementById('progress-box').style.display = 'block';
+  document.getElementById('progress-log').innerHTML = '';
+  setStatus('Working... (see progress below)');
+
+  // Poll for live progress every second
+  let lastCount = 0;
+  const pollInterval = setInterval(async () => {
+    try {
+      const pr = await fetch('/api/progress');
+      const pd = await pr.json();
+      const msgs = pd.messages || [];
+      if (msgs.length > lastCount) {
+        const log = document.getElementById('progress-log');
+        for (let i = lastCount; i < msgs.length; i++) {
+          const line = document.createElement('div');
+          line.textContent = msgs[i];
+          log.appendChild(line);
+        }
+        log.scrollTop = log.scrollHeight;
+        lastCount = msgs.length;
+      }
+    } catch(e) {}
+  }, 1000);
 
   let d;
   try {
@@ -185,10 +218,12 @@ async function startGenerate() {
     });
     d = await r.json();
   } catch (err) {
+    clearInterval(pollInterval);
     setStatus('Network error - is the app still running? (' + err.message + ')', false);
     document.getElementById('generate-btn').disabled = false;
     return;
   }
+  clearInterval(pollInterval);
 
   if (!d.ok) {
     setStatus('Error: ' + d.error, false);
@@ -281,6 +316,11 @@ def api_summary():
     })
 
 
+@app.route("/api/progress")
+def api_progress():
+    return jsonify({"messages": list(_state["progress"])})
+
+
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
     data = request.json
@@ -288,12 +328,14 @@ def api_generate():
     if needed == 0:
         return jsonify({"ok": False, "error": "All 10 reviews already submitted this month."})
 
+    _state["progress"].clear()
+    _add_progress("Scanning Space NK for products...")
+
     try:
         excluded = history.get_reviewed_product_ids()
-        print(f"[agent] Fetching {needed} candidate products…")
         products, log = scraper.fetch_candidate_products(excluded, needed)
         for line in log:
-            print(f"  {line}")
+            _add_progress(line)
         if not products:
             return jsonify({
                 "ok": False,
@@ -301,8 +343,9 @@ def api_generate():
                 "log": log,
             })
 
-        print(f"[agent] Generating reviews for {len(products)} products…")
+        _add_progress(f"Found {len(products)} products. Generating reviews...")
         reviewed = generator.generate_all_reviews(products)
+        _add_progress(f"Done! Generated {len(reviewed)} reviews.")
         return jsonify({"ok": True, "reviews": reviewed, "log": log})
     except Exception as e:
         import traceback

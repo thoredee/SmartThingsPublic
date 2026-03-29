@@ -8,7 +8,19 @@ import os
 import requests
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+# Progress callback — set by app.py so we can push live updates to the UI
+_progress_callback = None
+
+def set_progress_callback(fn):
+    global _progress_callback
+    _progress_callback = fn
+
+def _emit(msg: str):
+    print(f"  {msg}")
+    if _progress_callback:
+        _progress_callback(msg)
 
 
 def _call_gemini(prompt: str) -> str:
@@ -72,9 +84,11 @@ REVIEW: <review text here>"""
 def generate_all_reviews(products: list[dict]) -> list[dict]:
     results = []
     for i, product in enumerate(products, 1):
-        print(f"  Generating review {i}/{len(products)}: {product['product_name'][:50]}...")
+        name = product['product_name'][:45]
+        _emit(f"({i}/{len(products)}) Writing review for: {name}...")
         try:
             results.append(generate_review(product))
+            _emit(f"({i}/{len(products)}) Done: {name}")
         except Exception as e:
-            print(f"  [generator] Skipping {product['product_name']}: {e}")
+            _emit(f"({i}/{len(products)}) Skipped ({str(e)[:60]})")
     return results
