@@ -5,6 +5,7 @@ using the Google Gemini API, informed by common themes in existing reviews.
 
 import re
 import os
+import time
 import requests
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -23,50 +24,53 @@ def _emit(msg: str):
         _progress_callback(msg)
 
 
-def _call_gemini(prompt: str) -> str:
-    resp = requests.post(
-        GEMINI_URL,
-        params={"key": GEMINI_API_KEY},
-        json={"contents": [{"parts": [{"text": prompt}]}]},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-
-def _summarise_review_themes(existing_reviews: list[str]) -> str:
-    if not existing_reviews:
-        return "No existing reviews available."
-    combined = "\n---\n".join(existing_reviews[:8])
-    return _call_gemini(
-        "From these product reviews, list 5 common themes or observations "
-        "(texture, scent, results, packaging, value, etc.) as bullet points. "
-        "Be brief.\n\n" + combined
-    )
+def _call_gemini(prompt: str, retries: int = 4) -> str:
+    """Call Gemini with automatic retry on rate-limit (429) errors."""
+    delay = 15  # seconds to wait on first 429
+    for attempt in range(retries):
+        resp = requests.post(
+            GEMINI_URL,
+            params={"key": GEMINI_API_KEY},
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=30,
+        )
+        if resp.status_code == 429:
+            wait = delay * (2 ** attempt)
+            _emit(f"  Rate limit hit — waiting {wait}s before retrying...")
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    resp.raise_for_status()  # raise after all retries exhausted
 
 
 def generate_review(product: dict) -> dict:
-    themes = _summarise_review_themes(product.get("existing_reviews", []))
+    """Generate a review in a single API call by combining theme extraction and writing."""
+    existing = product.get("existing_reviews", [])
+    reviews_block = (
+        "\n---\n".join(existing[:6]) if existing
+        else "No existing reviews available for this product."
+    )
 
-    prompt = f"""You are writing a genuine customer review for a Space NK product.
+    prompt = f"""You are helping write a genuine customer review for a Space NK product.
 
-Product: {product['product_name']}
+Product name: {product['product_name']}
 
-Common themes from other customers:
-{themes}
+Here are some existing customer reviews for this product (to help you pick up real observations):
+{reviews_block}
 
-Write a single product review that:
-- Is approximately 100 words (90–115 words)
-- Sounds like an everyday British woman writing naturally
-- Tone is average to positive — honest but not gushing, no superlatives like "amazing" or "life-changing"
-- Mentions 2–3 specific observations (texture, scent, how it feels, packaging, etc.) drawn from the themes above
-- Does NOT say it was gifted, incentivised, or that you haven't used it
-- Does NOT start with "I"
+Based on the above, write a single customer review that:
+- Is approximately 100 words (90-115 words)
+- Sounds like an everyday British woman writing naturally and honestly
+- Tone is average to positive - honest but not gushing, no superlatives like "amazing" or "life-changing"
+- Mentions 2-3 specific observations (texture, scent, how it feels, packaging, results, etc.)
+- Does NOT mention being gifted, incentivised, or that you haven't used the product
+- Does NOT start with the word "I"
 - Is written in first person throughout
 
-Also provide a short review title (5–8 words).
+Also provide a short review title (5-8 words).
 
-Respond in this exact format:
+Respond in this exact format and nothing else:
 TITLE: <title here>
 REVIEW: <review text here>"""
 
@@ -85,10 +89,13 @@ def generate_all_reviews(products: list[dict]) -> list[dict]:
     results = []
     for i, product in enumerate(products, 1):
         name = product['product_name'][:45]
-        _emit(f"({i}/{len(products)}) Writing review for: {name}...")
+        _emit(f"({i}/{len(products)}) Writing review: {name}...")
         try:
             results.append(generate_review(product))
-            _emit(f"({i}/{len(products)}) Done: {name}")
+            _emit(f"({i}/{len(products)}) Done!")
+            # Small pause between products to stay well under rate limits
+            if i < len(products):
+                time.sleep(4)
         except Exception as e:
-            _emit(f"({i}/{len(products)}) Skipped ({str(e)[:60]})")
+            _emit(f"({i}/{len(products)}) Skipped — {str(e)[:70]}")
     return results
