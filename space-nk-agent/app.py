@@ -195,7 +195,7 @@ async function startGenerate() {
     if (d.log && d.log.length) {
       const logDiv = document.createElement('pre');
       logDiv.style = 'background:#f5f5f5;border:1px solid #ddd;padding:12px;font-size:.75rem;margin-top:12px;overflow-x:auto;white-space:pre-wrap;';
-      logDiv.textContent = d.log.join('\n');
+      logDiv.textContent = d.log.join('\\n');
       document.getElementById('status-bar').appendChild(logDiv);
     }
     document.getElementById('generate-btn').disabled = false;
